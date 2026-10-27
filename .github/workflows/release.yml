@@ -1,0 +1,46 @@
+name: Java Release
+
+on:
+  push:
+    tags: ["v*.*.*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout tagged commit
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: maven
+
+      - name: Check pom.xml version matches tag
+        run: |
+          POM_VERSION=$(sed -n 's:.*<version>\(.*\)</version>.*:\1:p' pom.xml | head -1)
+          [ "$POM_VERSION" = "${GITHUB_REF_NAME#v}" ] || { echo "pom.xml is $POM_VERSION, tag is $GITHUB_REF_NAME"; exit 1; }
+
+      - name: Verify
+        run: mvn -B verify
+
+      - name: Package jar
+        run: mvn -B -DskipTests package
+
+      - name: Write checksum
+        working-directory: target
+        run: sha256sum calc-ci-demo-*.jar > SHA256SUM-jar.txt
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            target/calc-ci-demo-*.jar
+            target/SHA256SUM-jar.txt
+          generate_release_notes: true
+          prerelease: ${{ contains(github.ref_name, '-') }}

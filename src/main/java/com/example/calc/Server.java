@@ -14,7 +14,7 @@ public final class Server {
     private static final Calculator CALC = new Calculator();
 
     public static void main(String[] args) throws IOException {
-        int port = Integer.parseInt(System.getenv().getOrDefault("PORT", "8080"));
+        int port = Integer.parseInt(System.getenv().getOrDefault("PORT", "5000"));
         HttpServer server = HttpServer.create(new InetSocketAddress(port), 0);
         server.createContext("/", Server::handle);
         server.start();

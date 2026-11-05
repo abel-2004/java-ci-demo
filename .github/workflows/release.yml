@@ -1,4 +1,4 @@
-name: Java Release
+name: Java Release and AWS Deploy
 
 on:
   push:
@@ -44,3 +44,31 @@ jobs:
             target/SHA256SUM-jar.txt
           generate_release_notes: true
           prerelease: ${{ contains(github.ref_name, '-') }}
+
+  deploy-aws:
+    needs: release
+    runs-on: ubuntu-latest
+    environment: aws-free
+    steps:
+      - name: Checkout (for the smoke test script)
+        uses: actions/checkout@v4
+
+      - name: Download the released jar into a bundle
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          curl -fsSL -o application.jar "https://github.com/${GITHUB_REPOSITORY}/releases/download/${GITHUB_REF_NAME}/calc-ci-demo-${VERSION}.jar"
+          zip bundle-aws.zip application.jar
+
+      - name: Deploy to Elastic Beanstalk
+        uses: einaregilsson/beanstalk-deploy@v22
+        with:
+          aws_access_key: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws_secret_key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          region: ${{ vars.AWS_REGION }}
+          application_name: calc-java-app
+          environment_name: calc-java-env
+          version_label: ${{ github.ref_name }}
+          deployment_package: bundle-aws.zip
+
+      - name: Smoke test the AWS environment
+        run: ./scripts/smoke_test.sh "http://${{ vars.AWS_JAVA_URL }}" "${GITHUB_REF_NAME#v}" 20

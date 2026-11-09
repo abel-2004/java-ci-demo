@@ -71,4 +71,4 @@ jobs:
           deployment_package: bundle-aws.zip
 
       - name: Smoke test the AWS environment
-        run: ./scripts/smoke_test.sh "http://${{ vars.AWS_JAVA_URL }}" "${GITHUB_REF_NAME#v}" 20
+        run: ./scripts/smoke_test.sh "${{ vars.AWS_JAVA_URL }}" "${GITHUB_REF_NAME#v}" 20

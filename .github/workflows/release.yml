@@ -144,9 +144,9 @@ jobs:
           aws_secret_key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           region: ${{ vars.AWS_REGION }}
           application_name: calc-java-app
-          environment_name: calc-java-container-env
-          version_label: ${{ github.ref_name }}-container
-          deployment_package: deploy-container.zip
+          environment_name: Calc-java-app-env
+          version_label: ${{ github.ref_name }}
+          deployment_package: bundle-aws.zip
 
-      - name: Smoke test the Elastic Beanstalk container environment
-        run: ./scripts/smoke_test.sh "http://${{ vars.AWS_JAVA_CONTAINER_URL }}" "${GITHUB_REF_NAME#v}" 20
+      - name: Smoke test the AWS environment
+        run: ./scripts/smoke_test.sh "${{ vars.AWS_JAVA_URL }}" "${GITHUB_REF_NAME#v}" 20

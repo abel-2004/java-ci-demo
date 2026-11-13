@@ -1,4 +1,4 @@
-name: Java Release and AWS Deploy
+name: Java Release, Image, and AWS Container Deploy
 
 on:
   push:
@@ -6,6 +6,7 @@ on:
 
 permissions:
   contents: write
+  packages: write
 
 jobs:
   release:
@@ -36,6 +37,14 @@ jobs:
         working-directory: target
         run: sha256sum calc-ci-demo-*.jar > SHA256SUM-jar.txt
 
+      - name: Upload jar
+        uses: actions/upload-artifact@v4
+        with:
+          name: jar
+          path: |
+            target/calc-ci-demo-*.jar
+            target/SHA256SUM-jar.txt
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
@@ -45,19 +54,88 @@ jobs:
           generate_release_notes: true
           prerelease: ${{ contains(github.ref_name, '-') }}
 
-  deploy-aws:
+  image:
     needs: release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (Dockerfile and smoke test)
+        uses: actions/checkout@v4
+
+      - name: Download jar
+        uses: actions/download-artifact@v4
+        with:
+          name: jar
+          path: target
+
+      - name: Set image name in lowercase
+        run: echo "IMAGE=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_ENV"
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Generate image tags
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+
+      - name: Build image locally (not pushed yet)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          push: false
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+      - name: Smoke test the image
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          docker run -d --name calc-smoke -p 8080:8080 "$IMAGE:$VERSION"
+          if ! ./scripts/smoke_test.sh http://localhost:8080 "$VERSION" 15; then
+            docker logs calc-smoke
+            exit 1
+          fi
+          docker rm -f calc-smoke
+
+      - name: Push the verified image
+        env:
+          TAGS: ${{ steps.meta.outputs.tags }}
+        run: |
+          printf '%s\n' "$TAGS" | while read -r TAG; do
+            [ -n "$TAG" ] && docker push "$TAG"
+          done
+
+  deploy-container:
+    needs: image
     runs-on: ubuntu-latest
     environment: aws-free
     steps:
       - name: Checkout (for the smoke test script)
         uses: actions/checkout@v4
 
-      - name: Download the released jar into a bundle
+      - name: Create Docker Compose bundle for Elastic Beanstalk
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
-          curl -fsSL -o application.jar "https://github.com/${GITHUB_REPOSITORY}/releases/download/${GITHUB_REF_NAME}/calc-ci-demo-${VERSION}.jar"
-          zip bundle-aws.zip application.jar
+          IMAGE="ghcr.io/${GITHUB_REPOSITORY,,}"
+          printf '%s\n' \
+            "services:" \
+            "  web:" \
+            "    image: $IMAGE:$VERSION" \
+            "    ports:" \
+            "      - \"80:8080\"" \
+            "    restart: always" > docker-compose.yml
+          zip deploy-container.zip docker-compose.yml
 
       - name: Deploy to Elastic Beanstalk
         uses: einaregilsson/beanstalk-deploy@v22
@@ -66,9 +144,9 @@ jobs:
           aws_secret_key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           region: ${{ vars.AWS_REGION }}
           application_name: calc-java-app
-          environment_name: Calc-java-app-env
-          version_label: ${{ github.ref_name }}
-          deployment_package: bundle-aws.zip
+          environment_name: calc-java-container-env
+          version_label: ${{ github.ref_name }}-container
+          deployment_package: deploy-container.zip
 
-      - name: Smoke test the AWS environment
-        run: ./scripts/smoke_test.sh "http://${{ vars.AWS_JAVA_URL }}" "${GITHUB_REF_NAME#v}" 20
+      - name: Smoke test the Elastic Beanstalk container environment
+        run: ./scripts/smoke_test.sh "http://${{ vars.AWS_JAVA_CONTAINER_URL }}" "${GITHUB_REF_NAME#v}" 20

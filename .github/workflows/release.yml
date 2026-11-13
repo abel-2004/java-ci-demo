@@ -150,3 +150,4 @@ jobs:
 
       - name: Smoke test the Elastic Beanstalk container environment
         run: ./scripts/smoke_test.sh "http://${{ vars.AWS_JAVA_CONTAINER_URL }}" "${GITHUB_REF_NAME#v}" 20
+

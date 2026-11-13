@@ -144,7 +144,7 @@ jobs:
           aws_secret_key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           region: ${{ vars.AWS_REGION }}
           application_name: calc-java-app
-          environment_name: calc-java-container-env
+          environment_name: calc-java-docker-env
           version_label: ${{ github.ref_name }}-container
           deployment_package: deploy-container.zip
 
